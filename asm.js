@@ -124,7 +124,7 @@ const compile = debounceLazy(async () => {
     asmEditor.setValue(str);
     asmEditor.clearSelection();
   }
-}, 100);
+}, 500);
 
 
 initLayout();

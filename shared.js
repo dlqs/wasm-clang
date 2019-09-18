@@ -299,6 +299,7 @@ class App {
       'canvas_fill',
       'canvas_fillRect',
       'canvas_fillText',
+      'canvas_finishSetup',
       'canvas_imageDataSetData',
       'canvas_lineTo',
       'canvas_measureText',
@@ -460,6 +461,9 @@ class App {
   // Canvas API
   canvas_setWidth(width) { if (canvas) canvas.width = width; }
   canvas_setHeight(height) { if (canvas) canvas.height = height; }
+  canvas_finishSetup() {
+    this.proc_exit(RAF_PROC_EXIT_CODE);
+  }
   canvas_requestAnimationFrame() {
     if (this.allowRequestAnimationFrame) {
       requestAnimationFrame(ms => {
@@ -729,8 +733,8 @@ class API {
     this.memfs.addFile(input, contents);
     const clang = await this.getModule(this.clangFilename);
     return await this.run(clang, 'clang', '-cc1', '-emit-obj',
-                          ...this.clangCommonArgs, '-O2', '-o', obj, '-x',
-                          'c++', input);
+                          ...this.clangCommonArgs, '-O2', '-std=c++17', '-o',
+                          obj, '-x', 'c++', input);
   }
 
   async compileToAssembly(options) {
@@ -744,10 +748,17 @@ class API {
     await this.ready;
     this.memfs.addFile(input, contents);
     const clang = await this.getModule(this.clangFilename);
-    await this.run(clang, 'clang', '-cc1', '-S', ...this.clangCommonArgs,
-                          `-triple=${triple}`, '-mllvm',
-                          '--x86-asm-syntax=intel', `-O${opt}`,
-                          '-o', output, '-x', 'c++', input);
+    try {
+      await this.run(clang, 'clang', '-cc1', '-S', ...this.clangCommonArgs,
+                     `-triple=${triple}`, '-mllvm', '--x86-asm-syntax=intel',
+                     `-O${opt}`, '-std=c++17', '-o', output, '-x', 'c++',
+                     input);
+    } catch (exn) {
+      if (!(exn instanceof ProcExit)) {
+        throw exn;
+      }
+      return '';
+    }
     return this.memfs.getFileContents(output);
   }
 
@@ -800,13 +811,20 @@ class API {
     const input = `test.cc`;
     const obj = `test.o`;
     const wasm = `test.wasm`;
-    await this.compile({input, contents, obj});
-    await this.link(obj, wasm);
+    try {
+      await this.compile({input, contents, obj});
+      await this.link(obj, wasm);
 
-    const buffer = this.memfs.getFileContents(wasm);
-    const testMod = await this.hostLogAsync(`Compiling ${wasm}`,
-                                            WebAssembly.compile(buffer));
-    return await this.run(testMod, wasm);
+      const buffer = this.memfs.getFileContents(wasm);
+      const testMod = await this.hostLogAsync(`Compiling ${wasm}`,
+                                              WebAssembly.compile(buffer));
+      return await this.run(testMod, wasm);
+    } catch (exn) {
+      if (!(exn instanceof ProcExit)) {
+        throw exn;
+      }
+      return null;
+    }
   }
 }
 
